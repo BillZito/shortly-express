@@ -1,5 +1,6 @@
 var expect = require('chai').expect;
 var request = require('request');
+var crypto = require('crypto');
 
 var db = require('../app/config');
 var Users = require('../app/collections/users');
@@ -63,11 +64,11 @@ describe('', function() {
 
     var requestWithSession = request.defaults({jar: true});
 
-    xbeforeEach(function(done) {
+    beforeEach(function(done) {
       // create a user that we can then log-in with
       new User({
         'username': 'Phillip',
-        'password': 'Phillip'
+        'password': crypto.createHash('sha1').update('Phillip').digest('base64')
       }).save().then(function() {
         var options = {
           'method': 'POST',
@@ -86,16 +87,18 @@ describe('', function() {
     });
 
     it('Only shortens valid urls, returning a 404 - Not found for invalid urls', function(done) {
+      // new User({username: 'Phillip'}).fetch().then(function(found){console.log(found, 'does phillip exist?'); });
       var options = {
         'method': 'POST',
         'uri': 'http://127.0.0.1:4568/links',
         'json': {
-          'url': 'definitely not a valid url'
+          'url': 'definitely not a url'
         }
       };
 
       requestWithSession(options, function(error, res, body) {
         // res comes from the request module, and may not follow express conventions
+        // console.log(res, 'res');
         expect(res.statusCode).to.equal(404);
         done();
       });
@@ -213,7 +216,7 @@ describe('', function() {
 
   }); // 'Link creation'
 
-  xdescribe('Privileged Access:', function() {
+  describe('Privileged Access:', function() {
 
     it('Redirects to login page if a user tries to access the main page and is not signed in', function(done) {
       request('http://127.0.0.1:4568/', function(error, res, body) {
@@ -238,7 +241,7 @@ describe('', function() {
 
   }); // 'Priviledged Access'
 
-  xdescribe('Account Creation:', function() {
+  describe('Account Creation:', function() {
 
     it('Signup creates a user record', function(done) {
       var options = {
@@ -286,14 +289,14 @@ describe('', function() {
 
   }); // 'Account Creation'
 
-  xdescribe('Account Login:', function() {
+  describe('Account Login:', function() {
 
     var requestWithSession = request.defaults({jar: true});
 
     beforeEach(function(done) {
       new User({
         'username': 'Phillip',
-        'password': 'Phillip'
+        'password': crypto.createHash('sha1').update('Phillip').digest('base64')
       }).save().then(function() {
         done();
       });
