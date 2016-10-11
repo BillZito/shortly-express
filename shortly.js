@@ -13,6 +13,8 @@ var Link = require('./app/models/link');
 var Click = require('./app/models/click');
 
 var app = express();
+var passport = require('passport');
+var FacebookStrategy = require('passport-facebook').Strategy;
 
 app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
@@ -22,11 +24,23 @@ app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
-
 // look at express docs to understand our options for passing to session
 // saveUnitialized saves a new session to the store (choose false for login)
 // resave forces session to be saved--what are session stores and why do they
 // matter and should resave be false to avoid race conditions? 
+
+
+passport.use(new FacebookStrategy({
+  clientID: '85702217037',
+  clientSecret: '499e10bcf722972449e56b858d17b11e',
+  callbackURL: 'http://localhost:4568/auth/facebook/callback'
+},
+  function(accesstoken, refreshToken, profile, done) {
+    done(null, profile);
+  }
+));
+
+
 app.use(session({
   secret: 'button-haranguer',
   cookie: {},
@@ -34,21 +48,69 @@ app.use(session({
   saveUninitialized: false
 }));
 
-// why does this run twice? 
+app.use(passport.initialize());
+app.use(passport.session());
+
+passport.serializeUser(function(user, done) {
+  console.log(user,'55');
+  done(null, user);
+});
+
+passport.deserializeUser(function(user, done) {
+  console.log(user,done,'60');
+  done(null, user);
+});
+
+
+
 var restrict = function(req, res, next) {
   // does this point to the user?
-
-  if (req.session.username) {
-    console.log('session found');
+  if (req.url === '/login' || req.url === '/signup' || req.url === '/logout' || req.url.indexOf('facebook') !== -1) {
+    console.log('important authorizing happening');
+    next();
+  } else if (req.session.userid) {
+    console.log('user found');
     next();
   } else {
     console.log(req.method, req.url, 'redirected to login');
-    req.session.error = 'Access denied!';
-    res.redirect('/login');
+    // req.session.error = 'Access denied!';
+    res.redirect('/auth/facebook');
   }
 };
+app.use(restrict);
 
-// app.use(restrict);
+app.get('/auth/facebook', passport.authenticate('facebook'));
+// after authentication above, facebook moves to callback 
+app.get('/auth/facebook/callback', passport.authenticate('facebook', {failureRedirect: '/login' }), 
+  function(req, res) {
+    console.log('we have succeeded', req.user);
+    req.session.userid = req.user.id;
+    // console.log('account', req.account);
+    new User({ username: req.user.id }).fetch()
+    .then(function(found) {
+      if (found) {
+        console.log('found old user');
+
+        // give them a session then call doen
+        // req.session.username = profile.id;
+        // done(null, profile);
+      } else {
+        // if user not found in system,  
+        console.log('making new user');
+        Users.create({
+          // write the username and hash to db
+          username: req.user.id,
+        })
+        .then(function(newUser) {
+            // redirect to links and store cookie
+          // req.session.username = profile.id;
+        });
+      }
+      res.redirect('/');
+    });
+  });
+
+
 app.get('/login', 
 function(req, res) {
   console.log('before render');
@@ -57,11 +119,12 @@ function(req, res) {
 });
 app.get('/logout', 
 function(req, res) {
+  req.logout();
   req.session.destroy();
   res.redirect('/login');
 });
 
-app.get('/', restrict,
+app.get('/',
 function(req, res) {
   console.log('main page');
   // restrict(req, res);
@@ -69,7 +132,7 @@ function(req, res) {
   res.render('index');
 });
 
-app.get('/create', restrict,
+app.get('/create',
 function(req, res) {
   res.render('index');
 });
@@ -80,14 +143,14 @@ function(req, res) {
   res.render('signup');
 });
 
-app.get('/links', restrict, 
+app.get('/links',  
 function(req, res) {
   Links.reset().fetch().then(function(links) {
     res.status(200).send(links.models);
   });
 });
 
-app.post('/links', restrict,
+app.post('/links', 
 function(req, res) {
   console.log('post to links!');
   var uri = req.body.url;
@@ -158,21 +221,22 @@ app.post('/signup', function(req, res) {
 
 app.post('/login', function(req, res) {
   //check if username and password combo is in db
-  var shasum = crypto.createHash('sha1');
-  shasum.update(req.body.password);
-  var username = req.body.username; 
-  var password = shasum.digest('base64');
-  new User({ username: username, password: password}).fetch()
-  .then(function(found) {
-    if (found) {
-      //create session and redirect
-      req.session.username = username;
-      res.status(200).redirect('/');
-    } else {
-      // if user not found in system,
-      res.redirect('/login');  
-    }
-  });
+  res.redirect('/auth/facebook');
+  // var shasum = crypto.createHash('sha1');
+  // shasum.update(req.body.password);
+  // var username = req.body.username; 
+  // var password = shasum.digest('base64');
+  // new User({ username: username, password: password}).fetch()
+  // .then(function(found) {
+  //   if (found) {
+  //     //create session and redirect
+  //     req.session.username = username;
+  //     res.status(200).redirect('/');
+  //   } else {
+  //     // if user not found in system,
+  //     res.redirect('/login');  
+  //   }
+  // });
 });
 
 
