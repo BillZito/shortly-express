@@ -4,6 +4,8 @@ var partials = require('express-partials');
 var bodyParser = require('body-parser');
 var session = require('express-session');
 var crypto = require('crypto');
+var passport = require('passport');
+var FacebookStrategy = require('passport-facebook').Strategy;
 
 var db = require('./app/config');
 var Users = require('./app/collections/users');
@@ -13,8 +15,6 @@ var Link = require('./app/models/link');
 var Click = require('./app/models/click');
 
 var app = express();
-var passport = require('passport');
-var FacebookStrategy = require('passport-facebook').Strategy;
 
 app.set('views', __dirname + '/views');
 app.set('view engine', 'ejs');
@@ -24,11 +24,6 @@ app.use(bodyParser.json());
 // Parse forms (signup/login)
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname + '/public'));
-// look at express docs to understand our options for passing to session
-// saveUnitialized saves a new session to the store (choose false for login)
-// resave forces session to be saved--what are session stores and why do they
-// matter and should resave be false to avoid race conditions? 
-
 
 passport.use(new FacebookStrategy({
   clientID: '85702217037',
@@ -40,77 +35,61 @@ passport.use(new FacebookStrategy({
   }
 ));
 
-
 app.use(session({
   secret: 'button-haranguer',
   cookie: {},
   resave: true,
   saveUninitialized: false
 }));
-
+//how does this work with session?
 app.use(passport.initialize());
 app.use(passport.session());
 
 passport.serializeUser(function(user, done) {
-  console.log(user,'55');
   done(null, user);
 });
 
 passport.deserializeUser(function(user, done) {
-  console.log(user,done,'60');
   done(null, user);
 });
 
 
 
 var restrict = function(req, res, next) {
-  // does this point to the user?
-  if (req.url === '/login' || req.url === '/signup' || req.url === '/logout' || req.url.indexOf('facebook') !== -1) {
-    console.log('important authorizing happening');
+  // check for authentication
+  if (req.url === '/login' || req.url === '/logout' || req.url.indexOf('facebook') !== -1) {
     next();
-  } else if (req.session.userid) {
-    console.log('user found');
+
+  } else if (req.user) {
     next();
   } else {
-    console.log(req.method, req.url, 'redirected to login');
-    // req.session.error = 'Access denied!';
     res.redirect('/auth/facebook');
   }
 };
+
 app.use(restrict);
 
 app.get('/auth/facebook', passport.authenticate('facebook'));
 // after authentication above, facebook moves to callback 
 app.get('/auth/facebook/callback', passport.authenticate('facebook', {failureRedirect: '/login' }), 
   function(req, res) {
-    console.log('we have succeeded', req.user);
-    req.session.userid = req.user.id;
-    // console.log('account', req.account);
     new User({ username: req.user.id }).fetch()
     .then(function(found) {
       if (found) {
         console.log('found old user');
-
-        // give them a session then call doen
-        // req.session.username = profile.id;
-        // done(null, profile);
       } else {
         // if user not found in system,  
         console.log('making new user');
         Users.create({
           // write the username and hash to db
           username: req.user.id,
-        })
-        .then(function(newUser) {
-            // redirect to links and store cookie
-          // req.session.username = profile.id;
         });
       }
       res.redirect('/');
     });
   });
 
-
+//======================================routing =========================================================/
 app.get('/login', 
 function(req, res) {
   console.log('before render');
@@ -120,15 +99,14 @@ function(req, res) {
 app.get('/logout', 
 function(req, res) {
   req.logout();
+  console.log(req.user, 'req.user after logout');
   req.session.destroy();
-  res.redirect('/login');
+  res.redirect('/');
 });
 
 app.get('/',
 function(req, res) {
   console.log('main page');
-  // restrict(req, res);
-  // this gives us an error that we can't set headers after doing someting
   res.render('index');
 });
 
@@ -184,61 +162,8 @@ function(req, res) {
 });
 
 /************************************************************/
-// Write your authentication routes here
+//authentication routes here
 /************************************************************/
-
-app.post('/signup', function(req, res) {
-
-  var username = req.body.username; 
-  var password = req.body.password;
-    // hash the password
-  var shasum = crypto.createHash('sha1');
-  shasum.update(password);
-  // check that unqiue username and password in db
-  new User({ username: username }).fetch()
-  .then(function(found) {
-    if (found) {
-      // if user found in system, tell them to try a new username
-      res.status(200).send('you done messed up');
-    } else {
-      // if user not found in system,  
-      Users.create({
-        // write the username and hash to db
-        username: username,
-        password: shasum.digest('base64'),
-      })
-      .then(function(newUser) {
-          // redirect to links and store cookie
-        req.session.username = username;
-        // guessing we dont send password as not secure
-        // req.session.password = shasum.digest('base64');
-        res.status(200).redirect('/');
-
-      });
-    }
-  });
-});
-
-app.post('/login', function(req, res) {
-  //check if username and password combo is in db
-  res.redirect('/auth/facebook');
-  // var shasum = crypto.createHash('sha1');
-  // shasum.update(req.body.password);
-  // var username = req.body.username; 
-  // var password = shasum.digest('base64');
-  // new User({ username: username, password: password}).fetch()
-  // .then(function(found) {
-  //   if (found) {
-  //     //create session and redirect
-  //     req.session.username = username;
-  //     res.status(200).redirect('/');
-  //   } else {
-  //     // if user not found in system,
-  //     res.redirect('/login');  
-  //   }
-  // });
-});
-
 
 
 /************************************************************/
